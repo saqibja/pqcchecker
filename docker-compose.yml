@@ -1,8 +1,15 @@
 name: pqcc
 
 x-openssl35: &openssl35
-  build: ./clients/openssl35
+  build: { context: ./clients, dockerfile: openssl35/Dockerfile }
   image: pqcc/openssl35:local
+
+# Every client image exposes the same entrypoint contract (see clients/common/openssl-run.sh).
+x-client: &client
+  profiles: [clients]
+  volumes:
+    - ./certs/out:/certs/out:ro
+  entrypoint: ["pqcc-client"]
 
 services:
   certgen:
@@ -23,8 +30,36 @@ services:
         aliases: [server.pqcc.test]
 
   openssl35:
-    <<: *openssl35
-    profiles: [clients]
-    volumes:
-      - ./certs/out:/certs/out:ro
-    entrypoint: ["/clients/openssl35/run.sh"]
+    <<: [*client, *openssl35]
+
+  openssl30:
+    <<: *client
+    build: { context: ./clients, dockerfile: openssl30/Dockerfile }
+    image: pqcc/openssl30:local
+
+  java:
+    <<: *client
+    build: { context: ./clients, dockerfile: java/Dockerfile }
+    image: pqcc/java:local
+
+  # Same image as java, with Bouncy Castle registered first.
+  java-bc:
+    <<: *client
+    image: pqcc/java:local
+    environment:
+      PQCC_PROVIDER: bc
+
+  # java-bc with ML-DSA signature schemes switched on (off by default in BCJSSE).
+  # The list is BCJSSE's default set with mldsa44/65/87 prepended.
+  java-bc-pq:
+    <<: *client
+    image: pqcc/java:local
+    environment:
+      PQCC_PROVIDER: bc
+      PQCC_JAVA_OPTS: >-
+        -Djdk.tls.client.SignatureSchemes=mldsa44,mldsa65,mldsa87,ed25519,ed448,ecdsa_secp256r1_sha256,ecdsa_secp384r1_sha384,ecdsa_secp521r1_sha512,ecdsa_brainpoolP256r1tls13_sha256,ecdsa_brainpoolP384r1tls13_sha384,ecdsa_brainpoolP512r1tls13_sha512,rsa_pss_pss_sha256,rsa_pss_pss_sha384,rsa_pss_pss_sha512,rsa_pss_rsae_sha256,rsa_pss_rsae_sha384,rsa_pss_rsae_sha512,rsa_pkcs1_sha256,rsa_pkcs1_sha384,rsa_pkcs1_sha512
+
+  go:
+    <<: *client
+    build: { context: ./clients, dockerfile: go/Dockerfile }
+    image: pqcc/go:local

@@ -15,6 +15,6 @@ while read -r variant mode port; do
   rc=$?
   if [[ $rc -eq 0 ]]; then status=PASS; else status="FAIL (rc=$rc)"; fail=1; fi
   printf '%-10s %-7s %-5s %s\n' "$variant" "$mode" "$port" "$status"
-  printf '%s\n' "$out" | grep -E 'Protocol version|Negotiated TLS1.3 group|Signature type|Verification:|verify error|error' | sed 's/^/    /'
+  printf '%s\n' "$out" | grep -E 'Protocol version|Negotiated|Signature type|Verification:|Peer signature|Server Temp Key|error|stage failed|Exception|Response:' | grep -v 's_server -accept' | head -8 | sed 's/^/    /'
 done < server/ports.tsv
 exit $fail

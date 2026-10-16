@@ -10,12 +10,15 @@ CNF=/certs/ext.cnf
 
 keygen() { # <variant> <outfile>
   case "$1" in
-    classical) openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$2" ;;
+    classical) openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$2"; return ;;
     mldsa)     openssl genpkey -algorithm ML-DSA-65 -out "$2" ;;
     mldsa44)   openssl genpkey -algorithm ML-DSA-44 -out "$2" ;;
     mldsa87)   openssl genpkey -algorithm ML-DSA-87 -out "$2" ;;
     *) echo "unknown variant: $1" >&2; exit 1 ;;
   esac
+  # Store ML-DSA keys seed-only (the IETF-recommended encoding). OpenSSL's default
+  # seed+expanded form is rejected by some clients (e.g. Go) before TLS even starts.
+  openssl pkey -in "$2" -provparam ml-dsa.output_formats=seed-only -out "$2.tmp" && mv "$2.tmp" "$2"
 }
 
 # ECDSA needs an explicit digest; ML-DSA signs the message directly and takes none.
