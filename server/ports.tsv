@@ -1,0 +1,5 @@
+# variant	mode	port
+classical	server	8443
+classical	mtls	8444
+mldsa	server	9443
+mldsa	mtls	9444

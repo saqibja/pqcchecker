@@ -1,0 +1,30 @@
+name: pqcc
+
+x-openssl35: &openssl35
+  build: ./clients/openssl35
+  image: pqcc/openssl35:local
+
+services:
+  certgen:
+    <<: *openssl35
+    profiles: [tools]
+    volumes:
+      - ./certs:/certs
+    entrypoint: ["bash", "/certs/gen.sh"]
+
+  server:
+    <<: *openssl35
+    volumes:
+      - ./certs/out:/certs/out:ro
+      - ./server:/server:ro
+    entrypoint: ["bash", "/server/start.sh"]
+    networks:
+      default:
+        aliases: [server.pqcc.test]
+
+  openssl35:
+    <<: *openssl35
+    profiles: [clients]
+    volumes:
+      - ./certs/out:/certs/out:ro
+    entrypoint: ["/clients/openssl35/run.sh"]
