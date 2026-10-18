@@ -21,7 +21,7 @@ def run(*cmd):
     r = subprocess.run(cmd, capture_output=True, text=True)
     out = (r.stdout + r.stderr).strip()
     print(f"$ {' '.join(cmd)}" + (f"\n{out}" if out else ""))
-    return r.returncode
+    return r.returncode, out
 
 
 def fail(stage, detail=""):
@@ -53,11 +53,14 @@ def main():
                              capture_output=True, check=True).stdout
         with open(POLICY, "w") as f:
             json.dump({"CACertificates": [base64.b64encode(der).decode()]}, f)
-    elif run("certutil", "-d", NSSDB, "-A", "-t", "C,,", "-n", "pqcc-root", "-i", f"{d}/root.crt") != 0:
-        fail("import root into NSS")
+    else:
+        rc, out = run("certutil", "-d", NSSDB, "-A", "-t", "C,,", "-n", "pqcc-root", "-i", f"{d}/root.crt")
+        if rc != 0:
+            fail("import root into NSS", out)
     if mode == "mtls":
-        if run("pk12util", "-d", NSSDB, "-i", f"{d}/client.p12", "-W", P12_PASS) != 0:
-            fail("import client certificate/key into NSS")
+        rc, out = run("pk12util", "-d", NSSDB, "-i", f"{d}/client.p12", "-W", P12_PASS)
+        if rc != 0:
+            fail("import client certificate/key into NSS", out)
     run("certutil", "-d", NSSDB, "-L")
 
     from selenium import webdriver

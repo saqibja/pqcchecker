@@ -1,8 +1,8 @@
 COMPOSE := docker compose
 
-.PHONY: all build certs up down smoke clean
+.PHONY: all build certs up down run clean
 
-all: certs up
+all: certs up run
 
 build:
 	$(COMPOSE) --profile tools --profile clients build
@@ -13,16 +13,15 @@ certs: build
 up:
 	$(COMPOSE) up -d --force-recreate server
 	@sleep 1
-	@$(COMPOSE) logs server
+	@$(COMPOSE) logs server | grep -E 'Server stack|listening'
 
 down:
 	$(COMPOSE) down --remove-orphans
 
-# make smoke CLIENT=openssl35 [MODE=server]
-CLIENT ?= openssl35
-MODE ?=
-smoke:
-	bash runner/smoke.sh $(CLIENT) $(MODE)
+# make run [CLIENTS="go chrome"]
+CLIENTS ?=
+run: build
+	python3 runner/run.py $(CLIENTS)
 
 clean: down
-	rm -rf certs/out results/*
+	rm -rf certs/out results/runs results/results.csv results/meta.json
