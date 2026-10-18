@@ -1,8 +1,8 @@
 COMPOSE := docker compose
 
-.PHONY: all build certs up down run clean
+.PHONY: all build certs up down run report clean
 
-all: certs up run
+all: certs up run report
 
 build:
 	$(COMPOSE) --profile tools --profile clients build
@@ -23,5 +23,8 @@ CLIENTS ?=
 run: build
 	python3 runner/run.py $(CLIENTS)
 
+report:
+	python3 runner/report.py
+
 clean: down
-	rm -rf certs/out results/runs results/results.csv results/meta.json
+	rm -rf certs/out results/runs results/results.csv results/meta.json results/report.html
