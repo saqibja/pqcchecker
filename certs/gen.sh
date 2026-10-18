@@ -4,12 +4,14 @@
 set -euo pipefail
 
 OUT=${OUT:-/certs/out}
-VARIANTS=${VARIANTS:-classical mldsa}
+# <variant>-untrusted is an independent chain (own root) with the same algorithm and
+# hostnames; clients never trust it. It backs the untrusted-root negative control.
+VARIANTS=${VARIANTS:-classical mldsa classical-untrusted mldsa-untrusted}
 DAYS=${DAYS:-365}
 CNF=/certs/ext.cnf
 
 keygen() { # <variant> <outfile>
-  case "$1" in
+  case "${1%-untrusted}" in
     classical) openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$2"; return ;;
     mldsa)     openssl genpkey -algorithm ML-DSA-65 -out "$2" ;;
     mldsa44)   openssl genpkey -algorithm ML-DSA-44 -out "$2" ;;
@@ -22,7 +24,7 @@ keygen() { # <variant> <outfile>
 }
 
 # ECDSA needs an explicit digest; ML-DSA signs the message directly and takes none.
-digest() { [[ "$1" == classical ]] && echo -sha256 || true; }
+digest() { [[ "${1%-untrusted}" == classical ]] && echo -sha256 || true; }
 
 serial() { echo "0x$(openssl rand -hex 16)"; }
 

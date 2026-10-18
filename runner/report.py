@@ -29,13 +29,25 @@ CLIENT_NOTES = {
                   "mTLS client identity imported with pk12util.",
 }
 
+# (class, phase, definition). Provisioning failures happen while setting the client up,
+# before any TLS traffic; handshake failures happen on the wire.
 ERROR_CLASSES = [
-    ("UNSUPPORTED_SIG_ALG", "Client does not recognize or support the signature algorithm."),
-    ("CERT_PARSE_ERROR", "Certificate or key could not be parsed or loaded."),
-    ("CHAIN_VALIDATION_ERROR", "Parsed, but chain or path validation failed."),
-    ("HANDSHAKE_FAILURE", "TLS alert or handshake abort not explained by the above."),
-    ("TIMEOUT", "No result within the time limit."),
-    ("OTHER", "Unclassified; see the raw output."),
+    ("TRUST_STORE_IMPORT_ERROR", "Provisioning",
+     "The client's tooling could not import the root, intermediate or client certificate/key "
+     "into its store (for example NSS certutil or pk12util)."),
+    ("KEY_LOAD_ERROR", "Provisioning",
+     "The client could not load its own private key (or the certificate paired with it) for mTLS."),
+    ("UNSUPPORTED_SIG_ALG", "Handshake",
+     "The client does not offer or support the signature algorithm, so the server has no usable "
+     "certificate or signature for it."),
+    ("CERT_PARSE_ERROR", "Handshake",
+     "The client could not parse a certificate received from the peer."),
+    ("CHAIN_VALIDATION_ERROR", "Handshake",
+     "The certificate parsed, but chain or path validation failed."),
+    ("HANDSHAKE_FAILURE", "Handshake",
+     "TLS alert or handshake abort not explained by the classes above."),
+    ("TIMEOUT", "Either", "No result within the time limit."),
+    ("OTHER", "Either", "Unclassified; see the raw output."),
 ]
 
 
@@ -92,7 +104,8 @@ def build(rows, meta):
     versions = "".join(
         f'<tr><th scope="row">{e(c)}</th><td><code>{e(meta["clients"].get(c, ""))}</code>'
         f'<div class="note">{e(CLIENT_NOTES.get(c, ""))}</div></td></tr>' for c in clients)
-    legend = "".join(f"<dt>{e(k)}</dt><dd>{e(d)}</dd>" for k, d in ERROR_CLASSES)
+    legend = "".join(f'<dt>{e(k)}</dt><dd><span class="phase">{e(p)}</span> {e(d)}</dd>'
+                     for k, p, d in ERROR_CLASSES)
 
     data = json.dumps([{k: r[k] for k in ("client_id", "client_version", "variant", "mode", "outcome",
                                           "error_class", "tls_version", "kex_group",
@@ -192,6 +205,8 @@ details summary {{ cursor: pointer; color: var(--muted); }}
 .legend {{ display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }}
 .legend dt {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82rem; }}
 .legend dd {{ margin: 0; }}
+.phase {{ display: inline-block; min-width: 92px; margin-right: 6px; padding: 0 6px; border: 1px solid var(--border);
+  border-radius: 4px; font-size: 0.75rem; color: var(--muted); text-align: center; }}
 ul {{ padding-left: 20px; margin: 0; }}
 li {{ margin-bottom: 6px; }}
 .matrix tbody th, .matrix thead td {{ position: sticky; left: 0; z-index: 1; background: var(--surface); }}

@@ -1,5 +1,9 @@
+# One s_server listener per row; certs come from certs/out/<variant>/.
+# *-untrusted listeners serve a chain from a root no client trusts (negative control).
 # variant	mode	port
 classical	server	8443
 classical	mtls	8444
 mldsa	server	9443
 mldsa	mtls	9444
+classical-untrusted	server	8453
+mldsa-untrusted	server	9453
