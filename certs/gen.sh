@@ -52,6 +52,9 @@ for v in $VARIANTS; do
 
   cat "$d/server.crt" "$d/int.crt" > "$d/server-chain.crt"
   cat "$d/client.crt" "$d/int.crt" > "$d/client-chain.crt"
+  # Client identity for clients that import PKCS#12 (Chrome via NSS pk12util).
+  openssl pkcs12 -export -inkey "$d/client.key" -in "$d/client.crt" -certfile "$d/int.crt" \
+    -name pqcc-client -passout pass:pqcc -out "$d/client.p12"
 
   openssl verify -CAfile "$d/root.crt" -untrusted "$d/int.crt" -purpose sslserver "$d/server.crt"
   openssl verify -CAfile "$d/root.crt" -untrusted "$d/int.crt" -purpose sslclient "$d/client.crt"

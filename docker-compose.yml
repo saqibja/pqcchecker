@@ -63,3 +63,24 @@ services:
     <<: *client
     build: { context: ./clients, dockerfile: go/Dockerfile }
     image: pqcc/go:local
+
+  # Google Chrome ships for linux/amd64 only; on Apple Silicon this needs Colima with Rosetta.
+  # chrome trusts the root via Chrome's CACertificates policy (Chrome's own verifier);
+  # chrome-nss uses the user NSS database, which in NSS 3.98 cannot store ML-DSA certs/keys.
+  # Client certificates for mTLS always come from NSS (the only source on Linux).
+  chrome:
+    <<: *client
+    build: { context: ./clients, dockerfile: chrome/Dockerfile }
+    image: pqcc/chrome:local
+    platform: linux/amd64
+    shm_size: 2gb
+    environment:
+      PQCC_CHROME_TRUST: policy
+
+  chrome-nss:
+    <<: *client
+    image: pqcc/chrome:local
+    platform: linux/amd64
+    shm_size: 2gb
+    environment:
+      PQCC_CHROME_TRUST: nss
