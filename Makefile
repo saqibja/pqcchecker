@@ -27,4 +27,5 @@ report:
 	python3 runner/report.py
 
 clean: down
-	rm -rf certs/out results/runs results/results.csv results/meta.json results/report.html
+	rm -rf certs/out results/runs results/results.csv results/negative_controls.csv \
+		results/meta.json results/report.html
