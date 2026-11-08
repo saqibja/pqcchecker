@@ -1,6 +1,6 @@
 # Java client: Eclipse Temurin (current LTS) with default JSSE, or Bouncy Castle JSSE
 # first when PQCC_PROVIDER=bc (the java-bc client). Build context: ./clients
-FROM eclipse-temurin:25-jdk@sha256:63f965b560b905c9633218330ac3516304b526a74fdc323a504b05c06e712c30
+FROM eclipse-temurin:25.0.5_8-jdk@sha256:83f4a7fc27df94dcc7b8de04d14cbbba8da14406f921e966969c3b09000aa507
 
 ADD --checksum=sha256:2af190b300cbb0b35e248ccf5f4a06b6072030aeb3da7a98ec73abe5b4cb371f \
     https://repo1.maven.org/maven2/org/bouncycastle/bcprov-jdk18on/1.86/bcprov-jdk18on-1.86.jar /app/lib/

@@ -58,7 +58,7 @@ Individual targets:
 | Target | What it does |
 |---|---|
 | `make build` | Build every image (server, cert generator, all clients). |
-| `make certs` | Generate all chains into `certs/out/` (gitignored). |
+| `make certs` | Generate all chains into `certs/out/` (gitignored). Keeps existing chains, since every round reuses them; `make certs FORCE=1` regenerates (a new baseline). |
 | `make up` | (Re)start the TLS server with one listener per row of `server/ports.tsv`. |
 | `make run` | Run every cell and negative control; `make run CLIENTS="go chrome"` runs a subset. |
 | `make report` | Build `results/report.html` from the latest run. |
@@ -73,6 +73,7 @@ before building a report from untrustworthy results.
 ```
 certs/gen.sh, ext.cnf    Chain generation (root -> intermediate -> server/client leaf) per variant,
                          plus an independent "<variant>-untrusted" chain for the negative control
+server/Dockerfile        Server and cert-generator image: OpenSSL 3.5.7, frozen at Round 1's build
 server/start.sh          One OpenSSL 3.5 s_server -www -trace per listener
 server/ports.tsv         Listeners: variant, mode, port
 clients/<id>/            Dockerfile + client program per client (java-bc, java-bc-pq and
@@ -88,10 +89,13 @@ results/                 Output (gitignored): latest results + runs/<run_id>/ ar
 
 - Base images are pinned by digest; downloaded jars are checksum-verified.
 - The OpenSSL packages are installed from fixed snapshots of the distribution archives
-  (`snapshot.debian.org` and `snapshot.ubuntu.com`, timestamp `20261016T000000Z`), so the builds
-  keep working after those versions leave the live mirrors. To move to newer packages, change
-  the `SNAPSHOT` and version build arguments in `clients/openssl35/Dockerfile` and
-  `clients/openssl30/Dockerfile` together.
+  (`snapshot.debian.org` and `snapshot.ubuntu.com`), so the builds keep working after those
+  versions leave the live mirrors. Each Dockerfile sets its own `SNAPSHOT` and version build
+  arguments.
+- The server and cert generator (`server/Dockerfile`) stay frozen at Round 1's build (OpenSSL
+  3.5.7, snapshot `20261016T000000Z`) so every round is measured against the same server and
+  chains. Client images are updated between rounds; `clients/openssl35/Dockerfile` is a
+  separate image for that reason.
 - Each run records the harness git commit (`-dirty` if there were uncommitted changes), the host,
   the Docker version, the server stack and every client's runtime version string.
 
@@ -138,6 +142,8 @@ results/                 Output (gitignored): latest results + runs/<run_id>/ ar
 | `raw_error_excerpt` | The line(s) the classification is based on; `server:` marks server-side evidence |
 | `log_path` | Full log: client output plus the server's trace for that listener during the cell |
 | `server_sig_scheme`, `client_sig_scheme` | Signature scheme in the server's / client's CertificateVerify, from the server trace |
+| `kex_offered` | Groups in the client's first ClientHello (`supported_groups`), from the server trace. Present even when the handshake fails before a group is negotiated; empty if the client never connected (provisioning failure) |
+| `platform` | Where the client ran: `linux-docker`, or the hosted runner image for native clients |
 
 `results/negative_controls.csv`: per client and variant, `untrusted_root` (chain from a root
 the client does not trust) and `missing_client_cert` (no client certificate to the mTLS

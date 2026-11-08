@@ -2,14 +2,14 @@
 
 # snapshot.ubuntu.com is HTTPS-only and the Ubuntu base image has no CA bundle, so apt
 # borrows one from the (already pinned) Go image for the first update.
-FROM golang:1.27.2-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e AS cacerts
+FROM golang:1.27.3-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80 AS cacerts
 
-FROM ubuntu:22.04@sha256:5ec03bb3441e8b0bf3b4f9cd4629a1ae763010dc3035bb8da3ae6cf026486401
+FROM ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11
 
 # Packages come from a fixed snapshot of the Ubuntu archive (all architectures, including
 # arm64, are served under /ubuntu), so the build keeps working after these versions leave
 # the live mirrors.
-ARG SNAPSHOT=20261016T000000Z
+ARG SNAPSHOT=20261108T000000Z
 ARG OPENSSL_VERSION=3.0.2-0ubuntu1.30
 COPY --from=cacerts /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 RUN printf 'deb [check-valid-until=no] https://snapshot.ubuntu.com/ubuntu/%s %s main\n' \

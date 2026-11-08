@@ -29,12 +29,17 @@ CLIENTS = ["openssl35", "openssl30", "java", "java-bc", "java-bc-pq", "go", "chr
 CELL_TIMEOUT = 120  # seconds; clients enforce their own ~15-30s network timeouts inside this
 UNTRUSTED = "-untrusted"
 # The spec's schema, plus the CertificateVerify signature schemes seen by the server.
+# Round 2 appends kex_offered (supported_groups from the client's first ClientHello, so a cell
+# that fails before ServerHello still shows which groups the client would negotiate) and
+# platform (where the client ran). Appending keeps Round 1's columns in the same positions.
 COLUMNS = ["run_id", "timestamp_utc", "client_id", "client_version", "variant", "mode", "outcome",
            "error_class", "tls_version", "kex_group", "raw_error_excerpt", "log_path",
-           "server_sig_scheme", "client_sig_scheme"]
+           "server_sig_scheme", "client_sig_scheme", "kex_offered", "platform"]
 NEG_COLUMNS = ["run_id", "timestamp_utc", "client_id", "client_version", "variant", "control",
                "expected", "observed", "verdict", "guards", "guarded_outcomes", "error_class",
-               "tls_version", "kex_group", "server_sig_scheme", "raw_error_excerpt", "log_path"]
+               "tls_version", "kex_group", "server_sig_scheme", "raw_error_excerpt", "log_path",
+               "kex_offered", "platform"]
+PLATFORM = "linux-docker"
 
 
 def sh(*cmd, timeout=None):
@@ -111,10 +116,13 @@ def parse_client(out):
 
 def parse_server(trace):
     """From the server's -trace output: negotiated version/group (last ServerHello), the
-    client's offered signature algorithms, and the CertificateVerify scheme in each direction
-    (Sent = server's signature, Received = client's signature in mTLS)."""
-    p = dict(version="", group="", sigalgs=[], server_sig="", client_sig="")
+    client's offered signature algorithms, the supported groups and key shares in its first
+    ClientHello, and the CertificateVerify scheme in each direction (Sent = server's signature, Received = client's
+    signature in mTLS)."""
+    p = dict(version="", group="", sigalgs=[], groups=[], key_shares=[], server_sig="",
+             client_sig="")
     section = direction = cv = None
+    hellos = 0
     for line in trace:
         if line.startswith("Sent TLS Record"):
             direction = "sent"
@@ -122,6 +130,7 @@ def parse_server(trace):
             direction = "recv"
         if "ClientHello, Length" in line:
             section, p["sigalgs"] = "ch", []
+            hellos += 1
         elif "ServerHello, Length" in line:
             section = "sh"
         elif "CertificateVerify, Length" in line:
@@ -134,13 +143,20 @@ def parse_server(trace):
             cv = None
         if "extension_type=" in line:
             if section and section.startswith("ch"):
-                section = "ch_sigalgs" if "signature_algorithms(13)" in line else "ch"
+                section = ("ch_sigalgs" if "signature_algorithms(13)" in line else
+                           "ch_sg" if "supported_groups(10)" in line else
+                           "ch_ks" if "key_share" in line else "ch")
             elif section and section.startswith("sh"):
                 section = ("sh_ks" if "key_share" in line else
                            "sh_sv" if "supported_versions" in line else "sh")
             continue
         if section == "ch_sigalgs" and (m := re.match(r"\s+([a-z0-9_]+) \(0x[0-9a-f]{4}\)", line)):
             p["sigalgs"].append(m.group(1))
+        elif section in ("ch_sg", "ch_ks") and hellos == 1 and line.strip():
+            code = re.search(r"\((\d+)\)\s*$", line)
+            if code and int(code.group(1)) & 0x0F0F != 0x0A0A:  # skip GREASE (RFC 8701)
+                name = norm_group(line.split("NamedGroup:", 1)[-1].rsplit("(", 1)[0]).strip()
+                p["groups" if section == "ch_sg" else "key_shares"].append(name)
         elif section == "sh_ks" and "NamedGroup:" in line:
             p["group"] = norm_group(line.split("NamedGroup:", 1)[1])
         elif section == "sh_sv" and re.search(r"TLS 1\.[0-3]", line):
@@ -247,6 +263,8 @@ def run_cell(client, variant, client_mode, port, listener, log_path, version, la
         "kex_group": c_grp or s["group"],
         "server_sig_scheme": s["server_sig"],
         "client_sig_scheme": s["client_sig"],
+        "kex_offered": " ".join(s["groups"]),
+        "platform": PLATFORM,
         "error_class": "", "raw_error_excerpt": "",
     }
     if rc != 0:
@@ -262,7 +280,9 @@ def run_cell(client, variant, client_mode, port, listener, log_path, version, la
         f"client_reported: tls={c_ver or '-'} group={c_grp or '-'}",
         f"server_observed: tls={s['version'] or '-'} group={s['group'] or '-'} "
         f"server_sig={s['server_sig'] or '-'} client_sig={s['client_sig'] or '-'} "
-        f"client_offered_sigalgs={','.join(s['sigalgs']) or '-'}",
+        f"client_offered_sigalgs={','.join(s['sigalgs']) or '-'} "
+        f"client_groups={','.join(s['groups']) or '-'} "
+        f"client_key_shares={','.join(s['key_shares']) or '-'}",
         "", "=== client output", out.rstrip(),
         "", f"=== server log for {listener[0]}/{listener[1]} during this cell", *srv, "",
     ]))
@@ -309,6 +329,7 @@ def main():
         "started_utc": now.isoformat(timespec="seconds"),
         "git_commit": git + ("-dirty" if dirty else ""),
         "host": f"{platform.system()} {platform.release()} {platform.machine()}",
+        "platform": PLATFORM,
         "docker_server": sh("docker", "version", "--format", "{{.Server.Version}}").stdout.strip(),
         "server_stack": compose("exec", "-T", "server", "openssl", "version").stdout.strip(),
         "server_ports": [{"variant": v, "mode": m, "port": p} for v, m, p in listeners],

@@ -1,8 +1,9 @@
 name: pqcc
 
-x-openssl35: &openssl35
-  build: { context: ./clients, dockerfile: openssl35/Dockerfile }
-  image: pqcc/openssl35:local
+# Server and cert generator: OpenSSL 3.5.7 frozen at Round 1's build (server/Dockerfile).
+x-server-image: &server-image
+  build: { context: ./server }
+  image: pqcc/server:local
 
 # Every client image exposes the same entrypoint contract (see clients/common/openssl-run.sh).
 x-client: &client
@@ -13,14 +14,14 @@ x-client: &client
 
 services:
   certgen:
-    <<: *openssl35
+    <<: *server-image
     profiles: [tools]
     volumes:
       - ./certs:/certs
     entrypoint: ["bash", "/certs/gen.sh"]
 
   server:
-    <<: *openssl35
+    <<: *server-image
     volumes:
       - ./certs/out:/certs/out:ro
       - ./server:/server:ro
@@ -30,7 +31,9 @@ services:
         aliases: [server.pqcc.test]
 
   openssl35:
-    <<: [*client, *openssl35]
+    <<: *client
+    build: { context: ./clients, dockerfile: openssl35/Dockerfile }
+    image: pqcc/openssl35:local
 
   openssl30:
     <<: *client

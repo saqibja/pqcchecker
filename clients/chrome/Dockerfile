@@ -1,8 +1,8 @@
 # Google Chrome client (Selenium standalone image; amd64 only, runs under Rosetta on Apple
 # Silicon). Build context: ./clients
-FROM selenium/standalone-chrome:155.0.8059.79-chromedriver-155.0.8059.79-grid-4.51.0-20261010@sha256:afadf25669d3f1f54b20fcb92b813dd64a40c3bfb03fc286c0ce3d373c735890
+FROM selenium/standalone-chrome:157.0.8103.38-chromedriver-157.0.8103.38-grid-4.52.0-20261101@sha256:e84d0ebd89836a4310060ae550d8103ba847c81f5a3f985319067d671248c628
 
-RUN pip3 install --no-cache-dir selenium==4.51.0
+RUN pip3 install --no-cache-dir selenium==4.52.0
 
 # mTLS: pick the imported client certificate automatically instead of showing a chooser.
 # The managed-policy dir is writable by seluser so the client can add a CACertificates

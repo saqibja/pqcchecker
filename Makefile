@@ -7,8 +7,12 @@ all: certs up run report
 build:
 	$(COMPOSE) --profile tools --profile clients build
 
+# Every round reuses the same chains so results stay comparable. Regenerating them starts a new
+# baseline: make certs FORCE=1
 certs: build
-	$(COMPOSE) run --rm certgen
+	@if [ -e certs/out ] && [ "$(FORCE)" != 1 ]; then \
+	  echo "certs/out exists; keeping it (the study's chains). make certs FORCE=1 regenerates."; \
+	else $(COMPOSE) run --rm certgen; fi
 
 up:
 	$(COMPOSE) up -d --force-recreate server
