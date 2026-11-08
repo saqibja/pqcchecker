@@ -71,10 +71,16 @@ def main():
               f"--user-data-dir={tempfile.mkdtemp()}"):
         opts.add_argument(a)
     opts.set_capability("goog:loggingPrefs", {"performance": "ALL"})
+    # Certificate errors must not be ignored; refuse to run unless the session confirms it.
+    opts.accept_insecure_certs = False
 
     url = f"https://{host}:{port}/"
     driver = webdriver.Chrome(options=opts)
     try:
+        insecure = driver.capabilities.get("acceptInsecureCerts")
+        print("Session acceptInsecureCerts:", insecure)
+        if insecure is not False:
+            fail("webdriver setup", f"acceptInsecureCerts={insecure}; refusing to run without validation")
         driver.set_page_load_timeout(30)
         nav_error = None
         try:

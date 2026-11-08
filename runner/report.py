@@ -27,6 +27,15 @@ CLIENT_NOTES = {
               "verifier). mTLS client identity imported into NSS, the only source on Linux.",
     "chrome-nss": "Headless Chrome. Root imported into the user NSS database with certutil; "
                   "mTLS client identity imported with pk12util.",
+    "firefox": "Headless Firefox (Mozilla's build, own bundled NSS). Root installed by the "
+               "Certificates.Install enterprise policy; mTLS client identity imported into the "
+               "profile with pk12util and selected automatically.",
+    "firefox-nss": "Headless Firefox. Root imported into the profile's NSS database with certutil; "
+                   "mTLS client identity imported with pk12util.",
+    "dotnet": ".NET SslStream on the default .NET 10 Linux image (Ubuntu 24.04), which delegates TLS "
+              "to the system OpenSSL 3.0. Root as the only anchor (CustomRootTrust); client identity "
+              "from client.p12.",
+    "dotnet-ossl35": "The same .NET program on the Ubuntu 26.04 .NET image, with OpenSSL 3.5.",
 }
 
 # (class, phase, definition). Provisioning failures happen while setting the client up,

@@ -25,7 +25,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 HOST = "server.pqcc.test"
-CLIENTS = ["openssl35", "openssl30", "java", "java-bc", "java-bc-pq", "go", "chrome", "chrome-nss"]
+CLIENTS = ["openssl35", "openssl30", "java", "java-bc", "java-bc-pq", "go", "chrome", "chrome-nss",
+           "firefox", "firefox-nss", "dotnet", "dotnet-ossl35"]
 CELL_TIMEOUT = 120  # seconds; clients enforce their own ~15-30s network timeouts inside this
 UNTRUSTED = "-untrusted"
 # The spec's schema, plus the CertificateVerify signature schemes seen by the server.
@@ -183,13 +184,19 @@ RULES = [
                             r"unable to load (client certificate|private key)|failed to parse private key"),
     ("UNSUPPORTED_SIG_ALG", "s", r"no suitable signature algorithm"),
     ("UNSUPPORTED_SIG_ALG", "c", r"no suitable signature algorithm|[Uu]nsupported signature algorithm|"
-                                 r"No supported signature algorithm"),
+                                 r"No supported signature algorithm|"
+                                 r"SSL_ERROR_UNSUPPORTED_SIGNATURE_ALGORITHM|SEC_ERROR_UNSUPPORTED_KEYALG"),
     ("CERT_PARSE_ERROR", "c", r"failed to parse certificate|CertificateParsingException|"
                               r"Could not parse certificate|decode.error|"
-                              r"(unsupported|unknown) public key algorithm|ASN1 routines"),
+                              r"(unsupported|unknown) public key algorithm|ASN1 routines|"
+                              r"SEC_ERROR_BAD_DER|SEC_ERROR_REUSED_ISSUER_AND_SERIAL"),
     ("CHAIN_VALIDATION_ERROR", "c", r"verify error|certificate verify failed|PKIX|CertPathValidator|"
                                     r"valid certification path|x509: |ERR_CERT_|bad.certificate|"
-                                    r"certificate.unknown|unknown.ca"),
+                                    r"certificate.unknown|unknown.ca|"
+                                    # NSS / mozilla::pkix (Firefox)
+                                    r"SEC_ERROR_(UNKNOWN_ISSUER|UNTRUSTED_ISSUER|UNTRUSTED_CERT|"
+                                    r"BAD_SIGNATURE|EXPIRED_|CA_CERT_INVALID|INADEQUATE_)|"
+                                    r"MOZILLA_PKIX_ERROR_|SSL_ERROR_BAD_CERT_DOMAIN"),
     ("CHAIN_VALIDATION_ERROR", "s", r"verify error|certificate verify failed"),
     # The server's own reason is the authoritative one for an mTLS rejection. Clients describe
     # it inconsistently (Chrome retries after aborted attempts and ends with a socket error).

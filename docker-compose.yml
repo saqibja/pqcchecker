@@ -87,3 +87,38 @@ services:
     shm_size: 2gb
     environment:
       PQCC_CHROME_TRUST: nss
+
+  # Firefox always verifies through NSS (its own bundled copy). The two rows differ in how the
+  # root gets in: the Certificates.Install enterprise policy, or certutil into the profile.
+  # mTLS: both import the client identity with pk12util (Ubuntu 26.04 NSS tools, as in chrome).
+  firefox:
+    <<: *client
+    build: { context: ./clients, dockerfile: firefox/Dockerfile }
+    image: pqcc/firefox:local
+    shm_size: 2gb
+    environment:
+      PQCC_FIREFOX_TRUST: policy
+
+  firefox-nss:
+    <<: *client
+    image: pqcc/firefox:local
+    shm_size: 2gb
+    environment:
+      PQCC_FIREFOX_TRUST: nss
+
+  # .NET SslStream on Linux delegates TLS and chain building to the system OpenSSL, so the
+  # result depends on the base image: the default .NET 10 image (Ubuntu 24.04, OpenSSL 3.0)
+  # and the Ubuntu 26.04 variant (OpenSSL 3.5). Same program as the Windows/macOS rows.
+  dotnet:
+    <<: *client
+    build: { context: ./clients, dockerfile: dotnet/Dockerfile }
+    image: pqcc/dotnet:local
+
+  dotnet-ossl35:
+    <<: *client
+    build:
+      context: ./clients
+      dockerfile: dotnet/Dockerfile
+      args:
+        RUNTIME_IMAGE: mcr.microsoft.com/dotnet/runtime:10.0.14-resolute@sha256:89f13dc68c47e341ac875da5f2a6fd3e231cd886ed204d296439d7fd9224a682
+    image: pqcc/dotnet-ossl35:local

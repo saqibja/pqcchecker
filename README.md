@@ -13,7 +13,7 @@ self-contained `report.html` for publishing.
 
 The original brief is [pq-cert-compat-study-spec.md](pq-cert-compat-study-spec.md).
 
-## Clients (Phase 1)
+## Clients
 
 | ID | What it runs |
 |---|---|
@@ -25,9 +25,17 @@ The original brief is [pq-cert-compat-study-spec.md](pq-cert-compat-study-spec.m
 | `go` | Go `crypto/tls` |
 | `chrome` | Headless Google Chrome; root trusted via the `CACertificates` enterprise policy |
 | `chrome-nss` | Headless Google Chrome; root imported into the user NSS database |
+| `firefox` | Headless Firefox (Mozilla's APT build); root installed by the `Certificates.Install` enterprise policy |
+| `firefox-nss` | Headless Firefox; root imported into the profile's NSS database with `certutil` |
+| `dotnet` | .NET 10 `SslStream` on the default Linux image (Ubuntu 24.04, system OpenSSL 3.0) |
+| `dotnet-ossl35` | The same .NET program on the Ubuntu 26.04 image (system OpenSSL 3.5) |
 
 Exact versions are pinned in the Dockerfiles and recorded at runtime in `results/meta.json`.
-The report explains why Bouncy Castle and Chrome each have two rows.
+The report explains why Bouncy Castle, Chrome, Firefox and .NET each have two rows.
+
+The browser clients set WebDriver's `acceptInsecureCerts` to false explicitly and refuse to run
+unless the session confirms it: Selenium's Firefox defaults turn it on, which would make Firefox
+ignore certificate errors.
 
 ## Prerequisites
 
