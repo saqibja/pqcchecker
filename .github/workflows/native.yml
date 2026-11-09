@@ -57,7 +57,7 @@ jobs:
           mkdir -p .build
           swiftc -O clients/macos/urlsession.swift -o .build/pqcc-urlsession
           (cd clients/go && CGO_ENABLED=0 go build -o ../../.build/pqcc-go .)
-          dotnet publish clients/dotnet/pqcc.csproj -c Release -o .build/dotnet --nologo
+          dotnet publish clients/dotnet/pqcc.csproj -c Release -p:PublishDir="$PWD/.build/dotnet/"
           python3 -m venv .build/venv
           .build/venv/bin/pip install --quiet selenium==4.52.0
 
