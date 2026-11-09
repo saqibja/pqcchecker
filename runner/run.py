@@ -251,7 +251,9 @@ RULES = [
                                       r"unable to load CA"),
     ("KEY_LOAD_ERROR", "c", r"stage failed: load client certificate/key"),
     ("KEY_LOAD_ERROR", "c", r"Could not (read|find|load) (client certificate|private key)|"
-                            r"unable to load (client certificate|private key)|failed to parse private key"),
+                            r"unable to load (client certificate|private key)|failed to parse private key|"
+                            # curl: "problem with the local client certificate" (SecureTransport import)
+                            r"curl: \(58\)"),
     ("UNSUPPORTED_SIG_ALG", "s", r"no suitable signature algorithm"),
     # TLS 1.2-only clients (SecureTransport): ML-DSA is defined for TLS 1.3 only, so the server
     # finds no usable cipher/signature combination for the ML-DSA certificate.
