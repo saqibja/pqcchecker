@@ -121,10 +121,17 @@ static class Program
             backend = $"OpenSSL {(v >> 28) & 0xF}.{(v >> 20) & 0xFF}.{(v >> 4) & 0xFF}";
         }
         else if (OperatingSystem.IsWindows()) backend = "SChannel";
-        else if (OperatingSystem.IsMacOS()) backend = "Apple Security framework";
+        else if (OperatingSystem.IsMacOS()) backend = UsesNetworkFramework() ? "Apple Network.framework" : "Apple SecureTransport";
         else backend = "unknown";
         return $"{RuntimeInformation.FrameworkDescription} ({RuntimeInformation.RuntimeIdentifier}; {RuntimeInformation.OSDescription.Trim()}; TLS: {backend})";
     }
+
+    // .NET 10 on macOS uses SecureTransport unless this opt-in switch is set (same lookup order
+    // as System.Net.Security: AppContext switch, then environment variable).
+    static bool UsesNetworkFramework() =>
+        AppContext.TryGetSwitch("System.Net.Security.UseNetworkFramework", out bool on)
+            ? on
+            : Environment.GetEnvironmentVariable("DOTNET_SYSTEM_NET_SECURITY_USENETWORKFRAMEWORK") is "1" or "true";
 
     static int Fail(string stage, Exception e)
     {

@@ -76,6 +76,28 @@ Individual targets:
 `make run` exits with status 2 if any negative control unexpectedly passes, so `make all` stops
 before building a report from untrustworthy results.
 
+## Native clients (macOS, Windows)
+
+Platform TLS stacks that cannot run in a Linux container run on GitHub-hosted runners
+(`.github/workflows/native.yml`, manual trigger). Each runner:
+
+1. builds the server's OpenSSL 3.5.7 from the checksum-verified upstream source
+   (`native/build-openssl.sh`; the Linux server is Debian's 3.5.7 package of the same release),
+2. decrypts the study's chains from `native/certs.tar.gz.enc` and checks them against
+   `native/certs.sha256` (`native/certs.py`; passphrase in the `PQCC_CERTS_PASSPHRASE` secret),
+3. maps `server.pqcc.test` to 127.0.0.1 and starts `server/native.py` (the same listeners and
+   `s_server` arguments as `server/start.sh`),
+4. runs `runner/run.py --native native/<platform>.json`, with the same cells, controls and
+   classification as the Docker run, and uploads `results/runs/` as an artifact.
+
+Native results carry the runner image in `platform` and `meta.json`. Each native platform also
+runs OpenSSL 3.5.7 `s_client` and the Go client as cross-checks: they should match their Linux
+rows, which shows the native server behaves like the Docker one.
+
+The bundle leaves out the root and intermediate CA private keys, so it cannot be used to issue
+certificates. To rebuild it after regenerating chains: set a new `PQCC_CERTS_PASSPHRASE` in
+the environment and in the repository secret, then run `python3 native/certs.py pack`.
+
 ## Repo layout
 
 ```

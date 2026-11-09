@@ -2,6 +2,11 @@
 """Runs every client x variant x mode cell, plus negative controls, and records the results.
 
 Usage: runner/run.py [client ...]          (default: every client, in CLIENTS order)
+       runner/run.py --native <config.json> [client ...]
+
+Docker mode (default) runs each client container against the compose server. Native mode runs
+clients as local commands against server/native.py on the same machine (the macOS and Windows
+runners); the config names the platform, the server log and each client's command line.
 
 Writes results/runs/<run_id>/{results.csv, negative_controls.csv, meta.json, logs/}
 and copies the CSVs and meta.json to results/ as the latest run.
@@ -14,6 +19,7 @@ guards cannot be trusted until that is explained.
 """
 import csv
 import json
+import os
 import platform
 import re
 import shutil
@@ -41,15 +47,82 @@ NEG_COLUMNS = ["run_id", "timestamp_utc", "client_id", "client_version", "varian
                "tls_version", "kex_group", "server_sig_scheme", "raw_error_excerpt", "log_path",
                "kex_offered", "platform"]
 PLATFORM = "linux-docker"
+BACKEND = None  # set in main(): DockerBackend or NativeBackend
 
 
-def sh(*cmd, timeout=None):
-    return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
-                          stdin=subprocess.DEVNULL, timeout=timeout)
+def sh(*cmd, timeout=None, env=None):
+    return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", stdin=subprocess.DEVNULL, timeout=timeout, env=env)
 
 
 def compose(*args, timeout=None):
     return sh("docker", "compose", *args, timeout=timeout)
+
+
+class DockerBackend:
+    """Clients are compose services; the server is the compose `server` container."""
+    platform = PLATFORM
+    clients = CLIENTS
+
+    def check_server(self):
+        if "running" not in compose("ps", "--format", "{{.State}}", "server").stdout:
+            sys.exit("server is not running (make up)")
+
+    def server_lines(self):
+        return compose("logs", "--no-log-prefix", "server").stdout.splitlines()
+
+    def server_stack(self):
+        return compose("exec", "-T", "server", "openssl", "version").stdout.strip()
+
+    def engine(self):
+        return {"docker_server": sh("docker", "version", "--format", "{{.Server.Version}}").stdout.strip()}
+
+    def run_client(self, client, args, timeout):
+        name = f"pqcc-cell-{client}"
+        sh("docker", "rm", "-f", name)
+        try:
+            r = compose("run", "--rm", "-T", "--name", name, client, *args, timeout=timeout)
+            return r.returncode, r.stdout, r.stderr
+        finally:
+            sh("docker", "rm", "-f", name)
+
+
+class NativeBackend:
+    """Clients are local commands; the server is server/native.py writing a prefixed log."""
+
+    def __init__(self, config_path):
+        cfg = json.loads(Path(config_path).read_text())
+        self.platform = cfg["platform"]
+        # Each client: a command list, or {"cmd": [...], "env": {...}} for per-client settings.
+        self.commands = {k: v if isinstance(v, dict) else {"cmd": v} for k, v in cfg["clients"].items()}
+        self.clients = list(self.commands)
+        self.log = ROOT / cfg["server_log"]
+        self.env = {**os.environ, **cfg.get("env", {}),
+                    "PQCC_CERTS": str(ROOT / cfg.get("certs", "certs/out"))}
+
+    def check_server(self):
+        lines = self.server_lines()
+        if not any(l.startswith("listening:") for l in lines):
+            sys.exit(f"server is not running (no 'listening:' lines in {self.log})")
+        if any(l.startswith("listener ") for l in lines):
+            sys.exit(f"server stopped: {next(l for l in lines if l.startswith('listener '))}")
+
+    def server_lines(self):
+        return self.log.read_text(encoding="utf-8", errors="replace").splitlines() if self.log.exists() else []
+
+    def server_stack(self):
+        line = next((l for l in self.server_lines() if l.startswith("Server stack:")), "")
+        return line.split(":", 1)[1].strip()
+
+    def engine(self):
+        # GitHub-hosted runners publish their image name and version in these variables.
+        image = " ".join(filter(None, (os.environ.get("ImageOS"), os.environ.get("ImageVersion"))))
+        return {"native_host": platform.platform(), "runner_image": image}
+
+    def run_client(self, client, args, timeout):
+        spec = self.commands[client]
+        r = sh(*spec["cmd"], *args, timeout=timeout, env={**self.env, **spec.get("env", {})})
+        return r.returncode, r.stdout, r.stderr
 
 
 def read_listeners():
@@ -84,10 +157,6 @@ def negative_controls(listeners, cells):
                                  listener=(variant, "mtls"), port=port[(variant, "mtls")],
                                  guards=[(variant, "mtls")]))
     return controls
-
-
-def server_lines():
-    return compose("logs", "--no-log-prefix", "server").stdout.splitlines()
 
 
 # ---------------------------------------------------------------- parsing
@@ -176,13 +245,17 @@ def parse_server(trace):
 RULES = [
     ("TIMEOUT", "c", r"timed out|SocketTimeoutException|i/o timeout|ERR_(CONNECTION_)?TIMED_OUT"),
     ("TRUST_STORE_IMPORT_ERROR", "c", r"stage failed: (read root certificate|parse root certificate|"
-                                      r"import root into NSS|import client certificate/key into NSS)"),
+                                      r"import root into NSS|import client certificate/key into NSS|"
+                                      r"import root into keychain|import client identity into keychain)"),
     ("TRUST_STORE_IMPORT_ERROR", "c", r"Error loading (CA )?file|Could not (read|load) CA|"
                                       r"unable to load CA"),
     ("KEY_LOAD_ERROR", "c", r"stage failed: load client certificate/key"),
     ("KEY_LOAD_ERROR", "c", r"Could not (read|find|load) (client certificate|private key)|"
                             r"unable to load (client certificate|private key)|failed to parse private key"),
     ("UNSUPPORTED_SIG_ALG", "s", r"no suitable signature algorithm"),
+    # TLS 1.2-only clients (SecureTransport): ML-DSA is defined for TLS 1.3 only, so the server
+    # finds no usable cipher/signature combination for the ML-DSA certificate.
+    ("UNSUPPORTED_SIG_ALG", "s", r"no shared cipher"),
     ("UNSUPPORTED_SIG_ALG", "c", r"no suitable signature algorithm|[Uu]nsupported signature algorithm|"
                                  r"No supported signature algorithm|"
                                  r"SSL_ERROR_UNSUPPORTED_SIGNATURE_ALGORITHM|SEC_ERROR_UNSUPPORTED_KEYALG"),
@@ -196,7 +269,11 @@ RULES = [
                                     # NSS / mozilla::pkix (Firefox)
                                     r"SEC_ERROR_(UNKNOWN_ISSUER|UNTRUSTED_ISSUER|UNTRUSTED_CERT|"
                                     r"BAD_SIGNATURE|EXPIRED_|CA_CERT_INVALID|INADEQUATE_)|"
-                                    r"MOZILLA_PKIX_ERROR_|SSL_ERROR_BAD_CERT_DOMAIN"),
+                                    r"MOZILLA_PKIX_ERROR_|SSL_ERROR_BAD_CERT_DOMAIN|"
+                                    # Apple Security framework / SecureTransport
+                                    r"certificate is not trusted|Unable to build chain|"
+                                    r"peer not verified|RecoverableTrustFailure|errSecNotTrusted|"
+                                    r"This Connection Is Not Private"),
     ("CHAIN_VALIDATION_ERROR", "s", r"verify error|certificate verify failed"),
     # The server's own reason is the authoritative one for an mTLS rejection. Clients describe
     # it inconsistently (Chrome retries after aborted attempts and ends with a socket error).
@@ -246,21 +323,19 @@ def classify(out, srv, rc, variant, offered):
 def run_cell(client, variant, client_mode, port, listener, log_path, version, label):
     """Runs one client invocation. `variant` picks the certs the client trusts/presents;
     `listener` is the server (variant, mode) it connects to."""
-    start = len(server_lines())
-    name = f"pqcc-cell-{client}"
-    sh("docker", "rm", "-f", name)
+    start = len(BACKEND.server_lines())
     t0 = time.monotonic()
     try:
-        r = compose("run", "--rm", "-T", "--name", name, client, variant, client_mode, HOST, port,
-                    timeout=CELL_TIMEOUT)
-        rc, out = r.returncode, r.stdout + r.stderr
+        rc, stdout, stderr = BACKEND.run_client(client, (variant, client_mode, HOST, port), CELL_TIMEOUT)
+        out = stdout + stderr
     except subprocess.TimeoutExpired as e:
-        sh("docker", "rm", "-f", name)
-        rc, out = None, (e.stdout or b"").decode() + (e.stderr or b"").decode()
+        def text(b):
+            return b.decode(errors="replace") if isinstance(b, bytes) else (b or "")
+        rc, out = None, text(e.stdout) + text(e.stderr)
     duration = time.monotonic() - t0
     time.sleep(0.5)  # let the server flush its last trace lines
     prefix = f"[{listener[0]}/{listener[1]}] "
-    srv = [l[len(prefix):] for l in server_lines()[start:] if l.startswith(prefix)]
+    srv = [l[len(prefix):] for l in BACKEND.server_lines()[start:] if l.startswith(prefix)]
 
     c_ver, c_grp = parse_client(out)
     s = parse_server(srv)
@@ -271,7 +346,7 @@ def run_cell(client, variant, client_mode, port, listener, log_path, version, la
         "server_sig_scheme": s["server_sig"],
         "client_sig_scheme": s["client_sig"],
         "kex_offered": " ".join(s["groups"]),
-        "platform": PLATFORM,
+        "platform": BACKEND.platform,
         "error_class": "", "raw_error_excerpt": "",
     }
     if rc != 0:
@@ -297,9 +372,9 @@ def run_cell(client, variant, client_mode, port, listener, log_path, version, la
 
 
 def client_version(client):
-    r = compose("run", "--rm", "-T", client, "version", timeout=CELL_TIMEOUT)
-    lines = [l for l in r.stdout.splitlines() if l.strip()]
-    return lines[-1].strip() if r.returncode == 0 and lines else "unknown"
+    rc, stdout, _ = BACKEND.run_client(client, ("version",), CELL_TIMEOUT)
+    lines = [l for l in stdout.splitlines() if l.strip()]
+    return lines[-1].strip() if rc == 0 and lines else "unknown"
 
 
 def now_utc():
@@ -314,12 +389,17 @@ def write_csv(path, columns, rows):
 
 
 def main():
-    clients = sys.argv[1:] or CLIENTS
-    unknown = set(clients) - set(CLIENTS)
+    global BACKEND
+    args = sys.argv[1:]
+    if args[:1] == ["--native"]:
+        BACKEND, args = NativeBackend(args[1]), args[2:]
+    else:
+        BACKEND = DockerBackend()
+    clients = args or BACKEND.clients
+    unknown = set(clients) - set(BACKEND.clients)
     if unknown:
         sys.exit(f"unknown client(s): {', '.join(sorted(unknown))}")
-    if "running" not in compose("ps", "--format", "{{.State}}", "server").stdout:
-        sys.exit("server is not running (make up)")
+    BACKEND.check_server()
 
     now = datetime.now(timezone.utc)
     run_id = now.strftime("%Y%m%dT%H%M%SZ")
@@ -336,9 +416,9 @@ def main():
         "started_utc": now.isoformat(timespec="seconds"),
         "git_commit": git + ("-dirty" if dirty else ""),
         "host": f"{platform.system()} {platform.release()} {platform.machine()}",
-        "platform": PLATFORM,
-        "docker_server": sh("docker", "version", "--format", "{{.Server.Version}}").stdout.strip(),
-        "server_stack": compose("exec", "-T", "server", "openssl", "version").stdout.strip(),
+        "platform": BACKEND.platform,
+        **BACKEND.engine(),
+        "server_stack": BACKEND.server_stack(),
         "server_ports": [{"variant": v, "mode": m, "port": p} for v, m, p in listeners],
         "clients": {},
     }

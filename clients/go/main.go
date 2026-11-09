@@ -1,5 +1,6 @@
 // PQCC Go client (crypto/tls). Usage: version | <variant> <mode> <host> <port>
 // Trust comes only from the variant's root CA; hostname verification is on.
+// Certificates come from $PQCC_CERTS (default /certs/out, the container mount).
 package main
 
 import (
@@ -26,7 +27,11 @@ func main() {
 		return
 	}
 	variant, mode, host, port := os.Args[1], os.Args[2], os.Args[3], os.Args[4]
-	dir := "/certs/out/" + variant + "/"
+	certs := os.Getenv("PQCC_CERTS")
+	if certs == "" {
+		certs = "/certs/out"
+	}
+	dir := certs + "/" + variant + "/"
 
 	rootPEM, err := os.ReadFile(dir + "root.crt")
 	if err != nil {

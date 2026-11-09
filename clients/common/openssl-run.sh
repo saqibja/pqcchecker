@@ -3,16 +3,17 @@
 #   run.sh version                          -> print the client's runtime version string
 #   run.sh <variant> <mode> <host> <port>   -> connect, validate, send "GET /", exit 0 only on
 #                                              a validated handshake + HTTP 200 from the server
-# Certs for a variant live in /certs/out/<variant>/.
+# Certs for a variant live in $PQCC_CERTS/<variant>/ (default /certs/out, the container mount).
+# Also run natively on the macOS/Windows runners as a cross-check of the native server.
 set -uo pipefail
 
 if [[ "${1:-}" == "version" ]]; then
-  openssl version
+  "${PQCC_OPENSSL:-openssl}" version
   exit 0
 fi
 
 variant=$1 mode=$2 host=$3 port=$4
-d=/certs/out/$variant
+d=${PQCC_CERTS:-/certs/out}/$variant
 
 args=(-connect "$host:$port" -servername "$host"
       -CAfile "$d/root.crt" -verify_return_error -verify_hostname "$host"
@@ -21,7 +22,10 @@ if [[ "$mode" == "mtls" ]]; then
   args+=(-cert "$d/client.crt" -key "$d/client.key" -cert_chain "$d/int.crt")
 fi
 
-out=$(printf 'GET / HTTP/1.0\r\n\r\n' | timeout 20 openssl s_client "${args[@]}" 2>&1)
+OPENSSL=${PQCC_OPENSSL:-openssl}
+# GNU timeout is not on macOS/Windows hosts; there the runner's per-cell timeout applies.
+limit=(); command -v timeout >/dev/null && limit=(timeout 20)
+out=$(printf 'GET / HTTP/1.0\r\n\r\n' | "${limit[@]}" "$OPENSSL" s_client "${args[@]}" 2>&1)
 rc=$?
 printf '%s\n' "$out"
 

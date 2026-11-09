@@ -2,3 +2,5 @@ certs/out/
 results/*
 !results/.gitkeep
 __pycache__/
+.build/
+.openssl/

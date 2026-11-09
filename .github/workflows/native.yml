@@ -1,0 +1,90 @@
+# Runs the native (non-Docker) clients on GitHub-hosted runners against a native OpenSSL 3.5.7
+# server on the same machine, using the study's chains (decrypted from native/certs.tar.gz.enc).
+# Manual trigger only; results are uploaded as an artifact.
+name: native-clients
+
+on:
+  # Temporary while Round 2 is developed on its branch (workflow_dispatch only works once the
+  # workflow is on the default branch). Remove when round2 is merged.
+  push:
+    branches: [round2]
+  workflow_dispatch:
+    inputs:
+      clients:
+        description: "Client ids to run (space-separated; empty = all in native/macos.json)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      OPENSSL_PREFIX: ${{ github.workspace }}/.openssl
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache server OpenSSL build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .openssl
+          key: openssl-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/build-openssl.sh') }}
+
+      - name: Build server OpenSSL 3.5.7
+        run: bash native/build-openssl.sh "$OPENSSL_PREFIX"
+
+      - name: Unpack the study's chains
+        env:
+          PQCC_CERTS_PASSPHRASE: ${{ secrets.PQCC_CERTS_PASSPHRASE }}
+        run: python3 native/certs.py unpack --openssl "$OPENSSL_PREFIX/bin/openssl"
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.403
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.3
+          cache: false
+
+      - name: Build clients
+        run: |
+          mkdir -p .build
+          swiftc -O clients/macos/urlsession.swift -o .build/pqcc-urlsession
+          (cd clients/go && CGO_ENABLED=0 go build -o ../../.build/pqcc-go .)
+          dotnet publish clients/dotnet/pqcc.csproj -c Release -o .build/dotnet --nologo
+          python3 -m venv .build/venv
+          .build/venv/bin/pip install --quiet selenium==4.52.0
+
+      - name: Prepare Safari, trust settings and keychain
+        run: bash native/macos-setup.sh
+
+      - name: Start server and run cells
+        env:
+          CLIENTS: ${{ inputs.clients }}
+        run: |
+          python3 server/native.py --openssl "$OPENSSL_PREFIX/bin/openssl" --certs certs/out \
+            --log results/native-server.log &
+          for i in $(seq 60); do
+            grep -q '^listening: mldsa-untrusted' results/native-server.log 2>/dev/null && break
+            grep -q '^listener ' results/native-server.log 2>/dev/null && break
+            sleep 1
+          done
+          grep -E '^(Server stack|listening|listener)' results/native-server.log
+          # shellcheck disable=SC2086
+          python3 runner/run.py --native native/macos.json $CLIENTS
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-macos
+          path: |
+            results/runs/
+            results/native-server.log
+          if-no-files-found: warn

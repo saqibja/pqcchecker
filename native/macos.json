@@ -1,0 +1,19 @@
+{
+  "platform": "macos-26",
+  "server_log": "results/native-server.log",
+  "clients": {
+    "macos-urlsession": [".build/pqcc-urlsession"],
+    "macos-safari": [".build/venv/bin/python", "clients/macos/safari.py"],
+    "macos-curl-st": ["bash", "clients/macos/curl-st.sh"],
+    "macos-dotnet": ["dotnet", ".build/dotnet/pqcc-dotnet.dll"],
+    "macos-dotnet-nw": {
+      "cmd": ["dotnet", ".build/dotnet/pqcc-dotnet.dll"],
+      "env": {"DOTNET_SYSTEM_NET_SECURITY_USENETWORKFRAMEWORK": "1"}
+    },
+    "macos-xcheck-openssl35": {
+      "cmd": ["bash", "clients/common/openssl-run.sh"],
+      "env": {"PQCC_OPENSSL": ".openssl/bin/openssl"}
+    },
+    "macos-xcheck-go": [".build/pqcc-go"]
+  }
+}
