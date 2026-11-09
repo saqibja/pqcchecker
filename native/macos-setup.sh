@@ -1,25 +1,29 @@
 #!/usr/bin/env bash
-# One-time setup on a disposable macOS runner (never run on a workstation: it changes system
-# authorization rules and enables Safari automation).
+# One-time setup on a disposable macOS runner (never run on a workstation: it enables Safari
+# automation and adds the study roots to the System keychain as trusted for SSL).
 set -euo pipefail
+# Fail instead of hanging if any command waits for an authorization prompt (no GUI here).
+limit() { perl -e 'alarm shift; exec @ARGV or die "exec $ARGV[0]: $!"' 60 "$@"; }
+
 # Safari WebDriver (also turns on "Allow Remote Automation").
-sudo safaridriver --enable
-# Allow admin trust settings without an interactive prompt (security add-trusted-cert -d).
-# macOS 26 may refuse this (-60005); add-trusted-cert can still work as root, so carry on and
-# check below. If it does not, only the Safari row is affected (its classical control fails).
-sudo security authorizationdb write com.apple.trust-settings.admin allow \
-  || echo "note: authorizationdb write refused; checking add-trusted-cert directly"
-root=certs/out/classical/root.crt
-if sudo security add-trusted-cert -d -r trustRoot -p ssl -k /Library/Keychains/System.keychain "$root"; then
-  echo "preflight: System keychain trust settings can be added (Safari trust will work)"
-  sudo security remove-trusted-cert -d "$root"
-  sudo security delete-certificate -c "PQCC classical Root CA" /Library/Keychains/System.keychain
-else
-  echo "preflight: cannot add System keychain trust settings; Safari cells will fail setup"
-fi
+limit sudo safaridriver --enable
+
+# Safari has no per-session trust, so the two study roots are trusted for the whole job.
+# Removing admin trust settings again waits for an authorization prompt, so they stay until
+# the runner is discarded. Each cell still validates against only its own root (the classical
+# and ML-DSA chains share no certificates), and the *-untrusted roots are never added.
+for v in classical mldsa; do
+  if limit sudo security add-trusted-cert -d -r trustRoot -p ssl \
+       -k /Library/Keychains/System.keychain "certs/out/$v/root.crt"; then
+    echo "trusted for SSL: $v root"
+  else
+    echo "could not trust the $v root; Safari's $v cells will fail" >&2
+  fi
+done
+
 # Dedicated keychain for client identities (Safari mTLS), unlocked with no auto-lock.
-security create-keychain -p pqcc pqcc.keychain
-security set-keychain-settings pqcc.keychain
-security unlock-keychain -p pqcc pqcc.keychain
-security list-keychains -d user -s pqcc.keychain $(security list-keychains -d user | tr -d '"')
-echo "127.0.0.1 server.pqcc.test" | sudo tee -a /etc/hosts
+limit security create-keychain -p pqcc pqcc.keychain
+limit security set-keychain-settings pqcc.keychain
+limit security unlock-keychain -p pqcc pqcc.keychain
+limit security list-keychains -d user -s pqcc.keychain $(security list-keychains -d user | tr -d '"')
+echo "127.0.0.1 server.pqcc.test" | limit sudo tee -a /etc/hosts

@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """PQCC Safari client (macOS runner only). Usage: version | <variant> <mode> <host> <port>
 
-Safari has no per-session trust setting, so for each cell the variant's root is added to the
-System keychain with admin trust settings for SSL, and removed again afterwards (also before
-starting, in case an earlier cell was interrupted). Only that root is trusted during the cell.
-mTLS: client.p12 is imported into the dedicated pqcc keychain (created by native/macos-setup.sh)
-with an identity preference for the server URL, so Safari picks it without a prompt.
+Trust: Safari has no per-session trust setting, so native/macos-setup.sh trusts the two study
+roots (classical, mldsa) for SSL in the System keychain for the whole job; removing admin trust
+settings needs an interactive prompt. Each cell still validates against only its own root (the
+chains share no certificates) and the *-untrusted roots are never trusted.
+mTLS: for mtls cells only, client.p12 is imported into the dedicated pqcc keychain with an
+identity preference for the server URL, so Safari picks it without a prompt; it is removed
+after the cell, so server-mode cells (including the missing-client-cert control) have none.
 
 Safari exposes neither the HTTP status nor TLS details to WebDriver, so a pass is: the
 top-level document is the https URL and contains the s_server -www page marker.
 Requires: native/macos-setup.sh (safaridriver enabled, trust-settings authorization, keychain).
 """
-import hashlib
 import os
 import re
 import subprocess
 import sys
 
-SYSTEM_KEYCHAIN = "/Library/Keychains/System.keychain"
 KEYCHAIN = os.path.expanduser("~/Library/Keychains/pqcc.keychain-db")
 P12_PASS = "pqcc"
 CLIENT_CN = "client.pqcc.test"
@@ -25,7 +25,14 @@ MARKER = "Ciphers supported in s_server binary"
 
 
 def run(*cmd, check_stage=None):
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        # A keychain authorization prompt would wait forever on a headless runner.
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        print(f"$ {' '.join(cmd)}\ntimed out after 30s (waiting for an authorization prompt?)")
+        if check_stage:
+            fail(check_stage, f"{cmd[0]} {cmd[1]} timed out")
+        return 124, "timed out"
     out = (r.stdout + r.stderr).strip()
     print(f"$ {' '.join(cmd)}" + (f"\n{out}" if out else ""))
     if check_stage and r.returncode != 0:
@@ -49,22 +56,11 @@ def version():
     print(f"Safari {v} ({b}) on macOS {os_v} ({os_b})")
 
 
-def pem_der(path):
-    pem = open(path).read()
-    b64 = "".join(l for l in pem.splitlines() if l and not l.startswith("-----"))
-    import base64
-    return base64.b64decode(b64)
-
-
-def cleanup(roots):
-    """Remove the study roots' trust settings and certificates, and the client identity."""
-    for root in roots:
-        if not os.path.exists(root):
-            continue
-        sha1 = hashlib.sha1(pem_der(root)).hexdigest().upper()
-        run("sudo", "security", "remove-trusted-cert", "-d", root)
-        run("sudo", "security", "delete-certificate", "-Z", sha1, SYSTEM_KEYCHAIN)
-    run("security", "delete-identity", "-c", CLIENT_CN, KEYCHAIN)
+def remove_identities():
+    # Both variants' identities share the CN; delete until none is left.
+    for _ in range(4):
+        if run("security", "delete-identity", "-c", CLIENT_CN, KEYCHAIN)[0] != 0:
+            break
 
 
 def main():
@@ -73,16 +69,14 @@ def main():
     variant, mode, host, port = sys.argv[1:5]
     certs = os.environ.get("PQCC_CERTS", "/certs/out")
     d = f"{certs}/{variant}"
-    all_roots = [f"{certs}/{v}/root.crt" for v in os.listdir(certs) if not v.startswith(".")]
     url = f"https://{host}:{port}/"
 
-    cleanup(all_roots)
+    remove_identities()
     try:
-        run("sudo", "security", "add-trusted-cert", "-d", "-r", "trustRoot", "-p", "ssl",
-            "-k", SYSTEM_KEYCHAIN, f"{d}/root.crt", check_stage="import root into keychain")
         if mode == "mtls":
             run("security", "import", f"{d}/client.p12", "-k", KEYCHAIN, "-f", "pkcs12", "-P", P12_PASS,
-                "-T", "/Applications/Safari.app", check_stage="import client identity into keychain")
+                "-T", "/Applications/Safari.app", "-T", "/usr/bin/security",
+                check_stage="import client identity into keychain")
             # Let Apple-signed apps (Safari) use the key without a keychain prompt.
             run("security", "set-key-partition-list", "-S", "apple-tool:,apple:", "-s", "-k", P12_PASS,
                 KEYCHAIN, check_stage="import client identity into keychain")
@@ -112,7 +106,7 @@ def main():
         finally:
             driver.quit()
     finally:
-        cleanup(all_roots)
+        remove_identities()
 
     text = info.get("text") or ""
     print("Document:", info.get("uri"))

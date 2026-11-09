@@ -62,9 +62,11 @@ jobs:
           .build/venv/bin/pip install --quiet selenium==4.52.0
 
       - name: Prepare Safari, trust settings and keychain
+        timeout-minutes: 5
         run: bash native/macos-setup.sh
 
       - name: Start server and run cells
+        timeout-minutes: 35
         env:
           CLIENTS: ${{ inputs.clients }}
         run: |
