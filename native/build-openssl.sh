@@ -12,7 +12,7 @@ if [[ -x "$PREFIX/bin/openssl" ]] && "$PREFIX/bin/openssl" version | grep -q "Op
   exit 0
 fi
 work=$(mktemp -d)
-curl -fsSL -o "$work/openssl.tar.gz" \
+curl -fsSL --retry 5 --retry-all-errors -o "$work/openssl.tar.gz" \
   "https://github.com/openssl/openssl/releases/download/openssl-$VERSION/openssl-$VERSION.tar.gz"
 echo "$SHA256  $work/openssl.tar.gz" | shasum -a 256 -c -
 tar -xzf "$work/openssl.tar.gz" -C "$work"

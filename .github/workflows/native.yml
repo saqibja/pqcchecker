@@ -29,14 +29,23 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Cache server OpenSSL build
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Restore and save separately so a good build is kept even if a later step fails.
+      - name: Restore server OpenSSL build
+        id: openssl-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .openssl
           key: openssl-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/build-openssl.sh') }}
 
       - name: Build server OpenSSL 3.5.7
         run: bash native/build-openssl.sh "$OPENSSL_PREFIX"
+
+      - name: Save server OpenSSL build
+        if: steps.openssl-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .openssl
+          key: openssl-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/build-openssl.sh') }}
 
       - name: Unpack the study's chains
         env:
