@@ -203,7 +203,8 @@ def parse_server(trace):
             hellos += 1
         elif "ServerHello, Length" in line:
             section = "sh"
-        elif "CertificateVerify, Length" in line:
+        elif "CertificateVerify, Length" in line or "ServerKeyExchange, Length" in line:
+            # TLS 1.2 has no server CertificateVerify; the server signs ServerKeyExchange.
             cv = direction
         elif re.search(r"^\s*(Inner )?Content Type =", line):
             section = None  # a new record; ClientHello/ServerHello fields don't continue across it
@@ -227,6 +228,8 @@ def parse_server(trace):
             if code and int(code.group(1)) & 0x0F0F != 0x0A0A:  # skip GREASE (RFC 8701)
                 name = norm_group(line.split("NamedGroup:", 1)[-1].rsplit("(", 1)[0]).strip()
                 p["groups" if section == "ch_sg" else "key_shares"].append(name)
+        elif "named_curve:" in line and not p["group"]:  # TLS 1.2 ECDHE (ServerKeyExchange)
+            p["group"] = norm_group(line.split("named_curve:", 1)[1])
         elif section == "sh_ks" and "NamedGroup:" in line:
             p["group"] = norm_group(line.split("NamedGroup:", 1)[1])
         elif section == "sh_sv" and re.search(r"TLS 1\.[0-3]", line):
