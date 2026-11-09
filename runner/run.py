@@ -275,6 +275,10 @@ RULES = [
                                     r"peer not verified|RecoverableTrustFailure|errSecNotTrusted|"
                                     r"This Connection Is Not Private"),
     ("CHAIN_VALIDATION_ERROR", "s", r"verify error|certificate verify failed"),
+    # The server *received* a certificate-rejection alert: the client refused the server's chain
+    # (Safari reports nothing to WebDriver, so this is the only evidence).
+    ("CHAIN_VALIDATION_ERROR", "s", r"ssl/tls alert (certificate unknown|unknown ca|bad certificate|"
+                                    r"unsupported certificate)"),
     # The server's own reason is the authoritative one for an mTLS rejection. Clients describe
     # it inconsistently (Chrome retries after aborted attempts and ends with a socket error).
     ("HANDSHAKE_FAILURE", "s", r"peer did not return a certificate"),

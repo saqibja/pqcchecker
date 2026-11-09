@@ -24,8 +24,9 @@ fi
 
 OPENSSL=${PQCC_OPENSSL:-openssl}
 # GNU timeout is not on macOS/Windows hosts; there the runner's per-cell timeout applies.
-limit=(); command -v timeout >/dev/null && limit=(timeout 20)
-out=$(printf 'GET / HTTP/1.0\r\n\r\n' | "${limit[@]}" "$OPENSSL" s_client "${args[@]}" 2>&1)
+# (No empty-array expansion: macOS bash 3.2 treats it as unbound under set -u.)
+limit=""; command -v timeout >/dev/null && limit="timeout 20"
+out=$(printf 'GET / HTTP/1.0\r\n\r\n' | $limit "$OPENSSL" s_client "${args[@]}" 2>&1)
 rc=$?
 printf '%s\n' "$out"
 

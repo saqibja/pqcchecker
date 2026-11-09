@@ -80,8 +80,11 @@ def main():
             # Let Apple-signed apps (Safari) use the key without a keychain prompt.
             run("security", "set-key-partition-list", "-S", "apple-tool:,apple:", "-s", "-k", P12_PASS,
                 KEYCHAIN, check_stage="import client identity into keychain")
-            run("security", "set-identity-preference", "-c", CLIENT_CN, "-s", url, KEYCHAIN,
-                check_stage="import client identity into keychain")
+            # Safari looks the preference up by URL; the key format is undocumented, so set the
+            # common forms. Without a match Safari shows a chooser sheet WebDriver cannot answer.
+            for service in (url, url.rstrip("/"), f"{host}:{port}", host):
+                run("security", "set-identity-preference", "-c", CLIENT_CN, "-s", service, KEYCHAIN,
+                    check_stage="import client identity into keychain")
 
         from selenium import webdriver
         from selenium.common.exceptions import WebDriverException
@@ -103,6 +106,11 @@ def main():
             info = driver.execute_script(
                 "return {uri: document.documentURI, title: document.title,"
                 " text: document.body ? document.body.innerText : ''}")
+            if MARKER not in (info.get("text") or ""):
+                # What Safari showed (e.g. a certificate chooser); uploaded with the results.
+                shot = os.path.join("results", "screenshots", f"safari_{variant}_{mode}_{port}.png")
+                os.makedirs(os.path.dirname(shot), exist_ok=True)
+                print("Screenshot:", shot, driver.save_screenshot(shot))
         finally:
             driver.quit()
     finally:

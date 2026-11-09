@@ -98,4 +98,5 @@ jobs:
           path: |
             results/runs/
             results/native-server.log
+            results/screenshots/
           if-no-files-found: warn

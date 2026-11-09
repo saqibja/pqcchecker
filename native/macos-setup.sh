@@ -26,4 +26,7 @@ limit security create-keychain -p pqcc pqcc.keychain
 limit security set-keychain-settings pqcc.keychain
 limit security unlock-keychain -p pqcc pqcc.keychain
 limit security list-keychains -d user -s pqcc.keychain $(security list-keychains -d user | tr -d '"')
+# SecureTransport (curl) imports client.p12 into the default keychain; the runner's login
+# keychain is locked, which curl reports as "Incorrect password". Use the unlocked one.
+limit security default-keychain -d user -s pqcc.keychain
 echo "127.0.0.1 server.pqcc.test" | limit sudo tee -a /etc/hosts
