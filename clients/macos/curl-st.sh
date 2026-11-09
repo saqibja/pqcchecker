@@ -22,7 +22,7 @@ variant=$1 mode=$2 host=$3 port=$4
 d=$PQCC_CERTS/$variant
 args=(-sS -v --max-time 20 --cacert "$d/root.crt" -o /dev/null -w 'HTTP status: %{http_code}\n')
 if [[ "$mode" == "mtls" ]]; then
-  args+=(--cert "$d/client.p12:pqcc" --cert-type P12)
+  args+=(--cert "$d/client.p12" --cert-type P12 --pass pqcc)
 fi
 
 out=$("$CURL" "${args[@]}" "https://$host:$port/" 2>&1)

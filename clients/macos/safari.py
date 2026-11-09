@@ -5,9 +5,12 @@ Trust: Safari has no per-session trust setting, so native/macos-setup.sh trusts 
 roots (classical, mldsa) for SSL in the System keychain for the whole job; removing admin trust
 settings needs an interactive prompt. Each cell still validates against only its own root (the
 chains share no certificates) and the *-untrusted roots are never trusted.
-mTLS: for mtls cells only, client.p12 is imported into the dedicated pqcc keychain with an
-identity preference for the server URL, so Safari picks it without a prompt; it is removed
-after the cell, so server-mode cells (including the missing-client-cert control) have none.
+mTLS is not tested: when a server requests a client certificate, Safari shows a certificate
+chooser that WebDriver cannot see or answer, even with identity preferences set, and the
+stalled connection blocks s_server's listener for every later client. mtls cells therefore
+fail at setup without connecting (recorded as SETUP_ERROR). The missing-client-cert control
+still runs (no identity is installed); Safari is the last macOS client so a stall there
+cannot affect other rows.
 
 Safari exposes neither the HTTP status nor TLS details to WebDriver, so a pass is: the
 top-level document is the https URL and contains the s_server -www page marker.
@@ -18,9 +21,6 @@ import re
 import subprocess
 import sys
 
-KEYCHAIN = os.path.expanduser("~/Library/Keychains/pqcc.keychain-db")
-P12_PASS = "pqcc"
-CLIENT_CN = "client.pqcc.test"
 MARKER = "Ciphers supported in s_server binary"
 
 
@@ -56,11 +56,11 @@ def version():
     print(f"Safari {v} ({b}) on macOS {os_v} ({os_b})")
 
 
-def remove_identities():
-    # Both variants' identities share the CN; delete until none is left.
-    for _ in range(4):
-        if run("security", "delete-identity", "-c", CLIENT_CN, KEYCHAIN)[0] != 0:
-            break
+def reset_safari():
+    # A cell that timed out can leave Safari paired with its WebDriver session, which makes
+    # the next session fail to start.
+    run("pkill", "-x", "safaridriver")
+    run("pkill", "-x", "Safari")
 
 
 def main():
@@ -70,22 +70,12 @@ def main():
     certs = os.environ.get("PQCC_CERTS", "/certs/out")
     d = f"{certs}/{variant}"
     url = f"https://{host}:{port}/"
+    if mode == "mtls":
+        fail("client certificate selection",
+             "not automatable: Safari's certificate chooser is not reachable from WebDriver")
 
-    remove_identities()
+    reset_safari()
     try:
-        if mode == "mtls":
-            run("security", "import", f"{d}/client.p12", "-k", KEYCHAIN, "-f", "pkcs12", "-P", P12_PASS,
-                "-T", "/Applications/Safari.app", "-T", "/usr/bin/security",
-                check_stage="import client identity into keychain")
-            # Let Apple-signed apps (Safari) use the key without a keychain prompt.
-            run("security", "set-key-partition-list", "-S", "apple-tool:,apple:", "-s", "-k", P12_PASS,
-                KEYCHAIN, check_stage="import client identity into keychain")
-            # Safari looks the preference up by URL; the key format is undocumented, so set the
-            # common forms. Without a match Safari shows a chooser sheet WebDriver cannot answer.
-            for service in (url, url.rstrip("/"), f"{host}:{port}", host):
-                run("security", "set-identity-preference", "-c", CLIENT_CN, "-s", service, KEYCHAIN,
-                    check_stage="import client identity into keychain")
-
         from selenium import webdriver
         from selenium.common.exceptions import WebDriverException
 
@@ -114,7 +104,7 @@ def main():
         finally:
             driver.quit()
     finally:
-        remove_identities()
+        reset_safari()
 
     text = info.get("text") or ""
     print("Document:", info.get("uri"))
